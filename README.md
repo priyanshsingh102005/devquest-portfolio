@@ -73,7 +73,7 @@ devquest-portfolio/
 ## 🚀 Live Demo
 
 🌐 Portfolio Website  
-👉 https://coreline-agency.onrender.com
+👉 https://devquest-portfolio.onrender.com
 
 ---
 
@@ -110,7 +110,7 @@ Some internal agency tools and advanced backend components remain private.
 
 If you want to collaborate or discuss a project:
 
-- 🌐 Portfolio: https://coreline-agency.onrender.com
+- 🌐 Portfolio: https://devquest-portfolio.onrender.com
 - 💻 GitHub: https://github.com/priyanshsingh102005
 
 ---
