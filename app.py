@@ -11,6 +11,10 @@ app = Flask(__name__)
 def home():
     return render_template('index.html')
 
+@app.route("/ping")
+def ping():
+    return "OK", 200
+
 
 @app.route("/contact", methods=["POST"])
 def contact():
