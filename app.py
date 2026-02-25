@@ -4,8 +4,10 @@ from datetime import datetime
 from urllib import error, request as urlrequest
 
 from flask import Flask, jsonify, render_template, request
+from dotenv import load_dotenv
 
 app = Flask(__name__)
+load_dotenv()
 
 @app.route('/')
 def home():
@@ -71,9 +73,19 @@ def contact():
             return jsonify({"ok": True, "result": response_data}), 200
     except error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="ignore")
-        return jsonify({"ok": False, "error": error_body}), 502
+        error_message = error_body
+        try:
+            parsed = json.loads(error_body)
+            if isinstance(parsed, dict):
+                meta_error = parsed.get("error") or {}
+                error_message = meta_error.get("message") or error_body
+        except Exception:
+            pass
+
+        return jsonify({"ok": False, "error": f"WhatsApp API ({exc.code}): {error_message}"}), 502
     except Exception:
         return jsonify({"ok": False, "error": "Failed to send WhatsApp message."}), 502
 
 if __name__ == '__main__':
     app.run(debug=True)
+

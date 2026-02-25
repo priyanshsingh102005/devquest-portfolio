@@ -360,7 +360,7 @@
         contactForm.reset();
         closeContactModal();
       } catch (err) {
-        alert("Could not send message. Please try again.");
+        alert(err.message || "Could not send message. Please try again.");
       } finally {
         submitButton.disabled = false;
         submitButton.textContent = originalButtonText;
@@ -369,3 +369,4 @@
   </script>
 </body>
 </html>
+
