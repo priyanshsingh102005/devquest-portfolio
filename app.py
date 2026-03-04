@@ -1,18 +1,23 @@
 import json
 import os
+import time
 from datetime import datetime, timezone
 from urllib import error, request as urlrequest
 
 from flask import Flask, jsonify, render_template, request
 from dotenv import load_dotenv
 
-app = Flask(__name__)
 load_dotenv()
 
+app = Flask(__name__)
 
-@app.route('/')
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
+DISCORD_USERNAME = os.getenv("DISCORD_WEBHOOK_USERNAME", "DevQuest Contact Bot").strip()
+
+
+@app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html")
 
 
 @app.route("/ping")
@@ -20,9 +25,55 @@ def ping():
     return "OK", 200
 
 
+def send_to_discord(payload):
+    """Send message to Discord webhook with rate limit handling"""
+
+    body = json.dumps(payload).encode("utf-8")
+
+    api_request = urlrequest.Request(
+        DISCORD_WEBHOOK_URL,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "DevQuestPortfolio/1.0",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlrequest.urlopen(api_request, timeout=15):
+            return True, None
+
+    except error.HTTPError as exc:
+
+        # Handle Discord rate limit
+        if exc.code == 429:
+            error_body = exc.read().decode("utf-8", errors="ignore")
+
+            try:
+                data = json.loads(error_body)
+                retry_after = data.get("retry_after", 2000) / 1000
+            except Exception:
+                retry_after = 2
+
+            time.sleep(retry_after)
+
+            try:
+                with urlrequest.urlopen(api_request, timeout=15):
+                    return True, None
+            except Exception as retry_error:
+                return False, str(retry_error)
+
+        return False, f"Discord API ({exc.code})"
+
+    except Exception as exc:
+        return False, str(exc)
+
+
 @app.route("/contact", methods=["POST"])
 def contact():
     payload = request.get_json(silent=True) or {}
+
     name = (payload.get("name") or "").strip()
     email = (payload.get("email") or "").strip()
     message = (payload.get("message") or "").strip()
@@ -30,21 +81,20 @@ def contact():
     if not name or not email or not message:
         return jsonify({"ok": False, "error": "All fields are required."}), 400
 
-    discord_webhook_url = (os.getenv("DISCORD_WEBHOOK_URL") or "").strip()
-    discord_username = (os.getenv("DISCORD_WEBHOOK_USERNAME") or "DevQuest Contact Bot").strip()
-
-    if not discord_webhook_url:
-        return jsonify({
-            "ok": False,
-            "error": "Discord is not configured on server."
-        }), 500
+    if not DISCORD_WEBHOOK_URL:
+        return jsonify({"ok": False, "error": "Discord webhook not configured."}), 500
 
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    submitted_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    submitted_iso = (
+        datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
     webhook_payload = {
-        "username": discord_username,
-        "content": "New portfolio contact submission",
+        "username": DISCORD_USERNAME,
+        "content": "📩 New portfolio contact submission",
         "embeds": [
             {
                 "title": "Contact Form Submission",
@@ -59,46 +109,23 @@ def contact():
         ],
     }
 
-    body = json.dumps(webhook_payload).encode("utf-8")
+    success, error_message = send_to_discord(webhook_payload)
 
-    api_request = urlrequest.Request(
-        discord_webhook_url,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "DevQuestPortfolio/1.0 (+Flask Contact Form)",
-        },
-        method="POST",
-    )
+    if not success:
+        return jsonify({"ok": False, "error": error_message}), 502
 
-    try:
-        with urlrequest.urlopen(api_request, timeout=15):
-            return jsonify({
-                "ok": True,
-                "meta": {
-                    "platform": "discord",
-                    "submitted_at": submitted_at,
-                    "contact_name": name,
-                    "contact_email": email,
-                    "contact_message": message,
-                },
-            }), 200
-    except error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8", errors="ignore")
-        error_message = error_body or "Unknown error"
-
-        try:
-            parsed = json.loads(error_body)
-            if isinstance(parsed, dict):
-                error_message = parsed.get("message") or error_message
-        except Exception:
-            pass
-
-        return jsonify({"ok": False, "error": f"Discord API ({exc.code}): {error_message}"}), 502
-    except Exception:
-        return jsonify({"ok": False, "error": "Failed to send Discord message."}), 502
+    return jsonify(
+        {
+            "ok": True,
+            "meta": {
+                "platform": "discord",
+                "submitted_at": submitted_at,
+                "contact_name": name,
+                "contact_email": email,
+            },
+        }
+    ), 200
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
