@@ -619,30 +619,78 @@ h3 {
 
 @media (max-width: 780px) {
   .page-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .hero {
-    min-height: 540px;
-    padding: 18px 18px 34px;
+    min-height: 520px;
+    padding: 16px 16px 22px;
+    background-position: 66% center;
   }
 
   .navbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
   }
 
   .nav-links {
     flex-wrap: wrap;
-    gap: 12px 16px;
+    gap: 8px 12px;
+    justify-content: flex-end;
+  }
+
+  .logo {
+    font-size: 2rem;
+  }
+
+  .nav-links a {
+    font-size: 0.9rem;
+  }
+
+  .contact-link {
+    padding: 6px 12px;
   }
 
   .hero-content {
-    margin-top: 56px;
+    margin-top: 52px;
+    max-width: 72%;
+  }
+
+  .hero-content h1 {
+    font-size: clamp(2.05rem, 7.2vw, 2.9rem);
+  }
+
+  .hero-content h2 {
+    font-size: clamp(1.2rem, 4.2vw, 1.6rem);
   }
 
   .hero-content p {
-    font-size: 1.05rem;
+    margin-top: 12px;
+    font-size: 0.98rem;
+    line-height: 1.34;
+  }
+
+  .stack-tags span,
+  .chips span,
+  .card-tag {
+    padding: 6px 11px;
+    font-size: 0.9rem;
+  }
+
+  .hero-actions {
+    margin-top: 18px;
+    gap: 8px;
+  }
+
+  .btn-primary {
+    min-width: 145px;
+    padding: 11px 16px;
+  }
+
+  .social {
+    width: 36px;
+    height: 36px;
   }
 
   h3 {
@@ -655,18 +703,37 @@ h3 {
   }
 
   .project-grid,
-  .client-grid,
   .skill-grid {
     grid-template-columns: 1fr;
   }
 
+  .client-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-card img {
+    height: 118px;
+  }
+
   .project-card h4 {
-    font-size: 1.3rem;
+    font-size: 1.12rem;
+    line-height: 1.2;
     min-height: 0;
   }
 
   .project-card ul {
+    margin-left: 16px;
+    gap: 4px;
+    font-size: 0.95rem;
     min-height: 0;
+  }
+
+  .card-content {
+    padding: 12px;
   }
 
   .skill-card h4 {
