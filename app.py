@@ -13,6 +13,8 @@ app = Flask(__name__)
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 DISCORD_USERNAME = os.getenv("DISCORD_WEBHOOK_USERNAME", "DevQuest Contact Bot").strip()
+MAX_DISCORD_RETRIES = 3
+MAX_SYNC_RETRY_WAIT_SECONDS = 5
 
 
 @app.route("/")
@@ -26,7 +28,7 @@ def ping():
 
 
 def send_to_discord(payload):
-    """Send message to Discord webhook with rate limit handling"""
+    """Send message to Discord webhook with rate-limit aware retries."""
 
     body = json.dumps(payload).encode("utf-8")
 
@@ -40,34 +42,67 @@ def send_to_discord(payload):
         method="POST",
     )
 
-    try:
-        with urlrequest.urlopen(api_request, timeout=15):
-            return True, None
+    def parse_retry_after(http_error, error_body):
+        values = []
 
-    except error.HTTPError as exc:
-
-        # Handle Discord rate limit
-        if exc.code == 429:
-            error_body = exc.read().decode("utf-8", errors="ignore")
-
+        retry_after_header = http_error.headers.get("Retry-After")
+        if retry_after_header:
             try:
-                data = json.loads(error_body)
-                retry_after = data.get("retry_after", 2000) / 1000
-            except Exception:
-                retry_after = 2
+                values.append(float(retry_after_header))
+            except ValueError:
+                pass
+
+        reset_after_header = http_error.headers.get("X-RateLimit-Reset-After")
+        if reset_after_header:
+            try:
+                values.append(float(reset_after_header))
+            except ValueError:
+                pass
+
+        try:
+            body_data = json.loads(error_body)
+            retry_after_body = body_data.get("retry_after")
+            if retry_after_body is not None:
+                values.append(float(retry_after_body))
+        except Exception:
+            pass
+
+        if not values:
+            return 2.0
+
+        retry_after = max(values)
+
+        # Some APIs return milliseconds; convert only when value is clearly ms-scale.
+        if retry_after > 1000:
+            retry_after = retry_after / 1000.0
+
+        return max(retry_after, 0.25)
+
+    for _ in range(MAX_DISCORD_RETRIES):
+        try:
+            with urlrequest.urlopen(api_request, timeout=15):
+                return True, None
+
+        except error.HTTPError as exc:
+            if exc.code != 429:
+                return False, f"Discord API ({exc.code})"
+
+            error_body = exc.read().decode("utf-8", errors="ignore")
+            retry_after = parse_retry_after(exc, error_body)
+
+            # Avoid long blocking sleeps in a request/response handler.
+            if retry_after > MAX_SYNC_RETRY_WAIT_SECONDS:
+                return (
+                    False,
+                    f"RATE_LIMIT: Too many requests right now. Please wait about {int(round(retry_after))} seconds and try again.",
+                )
 
             time.sleep(retry_after)
 
-            try:
-                with urlrequest.urlopen(api_request, timeout=15):
-                    return True, None
-            except Exception as retry_error:
-                return False, str(retry_error)
+        except Exception as exc:
+            return False, str(exc)
 
-        return False, f"Discord API ({exc.code})"
-
-    except Exception as exc:
-        return False, str(exc)
+    return False, "RATE_LIMIT: Too many requests right now. Please try again shortly."
 
 
 @app.route("/contact", methods=["POST"])
@@ -94,7 +129,7 @@ def contact():
 
     webhook_payload = {
         "username": DISCORD_USERNAME,
-        "content": "📩 New portfolio contact submission",
+        "content": "New portfolio contact submission",
         "embeds": [
             {
                 "title": "Contact Form Submission",
@@ -112,7 +147,9 @@ def contact():
     success, error_message = send_to_discord(webhook_payload)
 
     if not success:
-        return jsonify({"ok": False, "error": error_message}), 502
+        status_code = 429 if (error_message or "").startswith("RATE_LIMIT:") else 502
+        safe_error = (error_message or "Message failed.").replace("RATE_LIMIT:", "").strip()
+        return jsonify({"ok": False, "error": safe_error}), status_code
 
     return jsonify(
         {

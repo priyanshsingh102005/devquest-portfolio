@@ -146,10 +146,14 @@ contactForm.addEventListener("submit", async (event) => {
       })
     });
 
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
 
     if (!response.ok || !result.ok) {
-      throw new Error(result.error || "Message failed.");
+      const rateLimitMessage = "Too many requests right now. Please wait a few seconds and try again.";
+      const errorMessage = response.status === 429
+        ? rateLimitMessage
+        : (result.error || "Message failed.");
+      throw new Error(errorMessage);
     }
 
     alert("Message sent successfully!");
