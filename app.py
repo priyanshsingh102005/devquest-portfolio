@@ -1,7 +1,9 @@
 import json
 import os
 import time
+from collections import deque
 from datetime import datetime, timezone
+from threading import Lock
 from urllib import error, request as urlrequest
 
 from flask import Flask, jsonify, render_template, request
@@ -15,6 +17,13 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
 DISCORD_USERNAME = os.getenv("DISCORD_WEBHOOK_USERNAME", "DevQuest Contact Bot").strip()
 MAX_DISCORD_RETRIES = 3
 MAX_SYNC_RETRY_WAIT_SECONDS = 5
+PER_IP_WINDOW_SECONDS = 300
+PER_IP_MAX_REQUESTS = 3
+GLOBAL_WINDOW_SECONDS = 10
+GLOBAL_MAX_REQUESTS = 6
+rate_limit_lock = Lock()
+ip_request_times = {}
+global_request_times = deque()
 
 
 @app.route("/")
@@ -105,9 +114,35 @@ def send_to_discord(payload):
     return False, "RATE_LIMIT: Too many requests right now. Please try again shortly."
 
 
+def is_rate_limited(client_ip):
+    """Simple in-memory throttling to protect Discord webhook from bursts."""
+    now = time.time()
+
+    with rate_limit_lock:
+        while global_request_times and (now - global_request_times[0]) > GLOBAL_WINDOW_SECONDS:
+            global_request_times.popleft()
+
+        if len(global_request_times) >= GLOBAL_MAX_REQUESTS:
+            return True
+
+        recent_for_ip = ip_request_times.setdefault(client_ip, deque())
+
+        while recent_for_ip and (now - recent_for_ip[0]) > PER_IP_WINDOW_SECONDS:
+            recent_for_ip.popleft()
+
+        if len(recent_for_ip) >= PER_IP_MAX_REQUESTS:
+            return True
+
+        recent_for_ip.append(now)
+        global_request_times.append(now)
+
+    return False
+
+
 @app.route("/contact", methods=["POST"])
 def contact():
     payload = request.get_json(silent=True) or {}
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
 
     name = (payload.get("name") or "").strip()
     email = (payload.get("email") or "").strip()
@@ -118,6 +153,17 @@ def contact():
 
     if not DISCORD_WEBHOOK_URL:
         return jsonify({"ok": False, "error": "Discord webhook not configured."}), 500
+
+    if is_rate_limited(client_ip):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": "Too many requests right now. Please wait a few minutes and try again.",
+                }
+            ),
+            429,
+        )
 
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     submitted_iso = (
